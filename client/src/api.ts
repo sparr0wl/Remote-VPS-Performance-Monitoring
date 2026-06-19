@@ -1,0 +1,115 @@
+import type {
+  CommandResult,
+  ConfigFile,
+  FirewallStatus,
+  Integration,
+  Metrics,
+  Profile,
+  Service
+} from "./types";
+
+export class AgentApi {
+  private profile: Profile;
+
+  constructor(profile: Profile) {
+    this.profile = profile;
+  }
+
+  health() {
+    return this.request<{ ok: boolean; time: string }>("/api/health");
+  }
+
+  metrics() {
+    return this.request<Metrics>("/api/metrics");
+  }
+
+  services() {
+    return this.request<Service[]>("/api/services");
+  }
+
+  serviceAction(name: string, action: string) {
+    return this.request<CommandResult>(`/api/services/${encodeURIComponent(name)}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+  }
+
+  serviceLogs(name: string, lines = 300) {
+    return this.request<{ logs: string }>(`/api/services/${encodeURIComponent(name)}/logs?lines=${lines}`);
+  }
+
+  firewall() {
+    return this.request<FirewallStatus>("/api/firewall");
+  }
+
+  ufw(operation: string, port?: number, protocol = "tcp") {
+    return this.request<CommandResult>("/api/firewall/ufw", {
+      method: "POST",
+      body: JSON.stringify({ operation, port, protocol })
+    });
+  }
+
+  iptables(body: {
+    operation: "add" | "delete";
+    chain: "INPUT" | "OUTPUT" | "FORWARD";
+    protocol?: "tcp" | "udp" | "icmp";
+    dport?: number;
+    source?: string;
+    target: "ACCEPT" | "DROP" | "REJECT";
+  }) {
+    return this.request<CommandResult>("/api/firewall/iptables", {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+  }
+
+  integrations() {
+    return this.request<Integration[]>("/api/integrations");
+  }
+
+  integrationAction(id: string, action: string) {
+    return this.request<CommandResult>(`/api/integrations/${id}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+  }
+
+  integrationLogs(id: string, lines = 300) {
+    return this.request<{ logs: string }>(`/api/integrations/${id}/logs?lines=${lines}`);
+  }
+
+  integrationConfig(id: string) {
+    return this.request<ConfigFile>(`/api/integrations/${id}/config`);
+  }
+
+  saveIntegrationConfig(id: string, content: string) {
+    return this.request<{ path: string; backup: string; validation: CommandResult }>(`/api/integrations/${id}/config`, {
+      method: "POST",
+      body: JSON.stringify({ content })
+    });
+  }
+
+  power(action: "reboot" | "shutdown") {
+    return this.request<CommandResult>("/api/power", {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const endpoint = this.profile.endpoint.replace(/\/$/, "");
+    const response = await fetch(endpoint + path, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.profile.token}`,
+        ...(init.headers ?? {})
+      }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `HTTP ${response.status}`);
+    }
+    return data as T;
+  }
+}

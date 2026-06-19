@@ -1,0 +1,17 @@
+.DS_Store
+.env
+*.log
+
+# Go
+agent/bin/
+agent/coverage.out
+
+# Node / Tauri
+client/node_modules/
+client/dist/
+client/.vite/
+client/src-tauri/target/
+.pnpm-store/
+
+# Local app state
+*.local.json

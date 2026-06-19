@@ -1,0 +1,12 @@
+listen: 127.0.0.1:8790
+api_token: change-this-token
+use_sudo: false
+log_lines_default: 300
+backup_dir: /var/backups/vps-monitor
+
+caddy_service: caddy.service
+caddy_config: /etc/caddy/Caddyfile
+
+xray_service: xray.service
+xray_config: /usr/local/etc/xray/config.json
+xray_config_alt: /etc/xray/config.json

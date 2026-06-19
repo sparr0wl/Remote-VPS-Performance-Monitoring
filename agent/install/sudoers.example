@@ -1,0 +1,9 @@
+# Optional sudoers policy for running the agent as an unprivileged user.
+# Install with: sudo visudo -f /etc/sudoers.d/vps-monitor-agent
+#
+# Replace "vpsmon" with the service user used by your deployment.
+#
+# vpsmon ALL=(root) NOPASSWD: /bin/systemctl, /usr/bin/systemctl, /bin/journalctl, /usr/bin/journalctl
+# vpsmon ALL=(root) NOPASSWD: /usr/sbin/ufw, /sbin/iptables, /usr/sbin/iptables, /sbin/iptables-save, /usr/sbin/iptables-save
+# vpsmon ALL=(root) NOPASSWD: /sbin/reboot, /usr/sbin/reboot, /sbin/shutdown, /usr/sbin/shutdown
+# vpsmon ALL=(root) NOPASSWD: /usr/bin/caddy, /usr/local/bin/caddy, /usr/bin/xray, /usr/local/bin/xray

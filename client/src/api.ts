@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type {
   CommandResult,
   ConfigFile,
@@ -7,6 +8,12 @@ import type {
   Profile,
   Service
 } from "./types";
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
 
 export class AgentApi {
   private profile: Profile;
@@ -98,6 +105,23 @@ export class AgentApi {
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const endpoint = this.profile.endpoint.replace(/\/$/, "");
+    const method = init.method ?? "GET";
+    const body = typeof init.body === "string" ? init.body : undefined;
+
+    if (window.__TAURI_INTERNALS__) {
+      const response = await invoke<{ status: number; body: string }>("agent_request", {
+        request: {
+          endpoint,
+          token: this.profile.token,
+          method,
+          path,
+          body
+        }
+      });
+      const data = response.body ? JSON.parse(response.body) : {};
+      return data as T;
+    }
+
     const response = await fetch(endpoint + path, {
       ...init,
       headers: {

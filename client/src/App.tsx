@@ -21,7 +21,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentApi } from "./api";
 import type { FirewallStatus, Integration, Metrics, Profile, Service } from "./types";
 import type { ReactNode } from "react";
@@ -79,7 +79,12 @@ function App() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
+  const [servicesBusy, setServicesBusy] = useState(false);
+  const [firewallBusy, setFirewallBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const overviewInFlight = useRef(false);
+  const servicesInFlight = useRef(false);
+  const firewallInFlight = useRef(false);
 
   const profile = profiles.find((item) => item.id === activeProfileId) ?? profiles[0];
   const api = useMemo(() => new AgentApi(profile), [profile]);
@@ -136,39 +141,91 @@ function App() {
     setStatus("Server removed");
   };
 
-  const refresh = useCallback(async () => {
+  const refreshOverview = useCallback(async () => {
+    if (overviewInFlight.current) {
+      return;
+    }
+    overviewInFlight.current = true;
     setBusy(true);
     try {
-      const [nextMetrics, nextServices, nextFirewall, nextIntegrations] = await Promise.all([
+      const [nextMetrics, nextIntegrations] = await Promise.all([
         api.metrics(),
-        api.services(),
-        api.firewall(),
         api.integrations()
       ]);
       setMetrics(nextMetrics);
-      setServices(nextServices);
-      setFirewall(nextFirewall);
       setIntegrations(nextIntegrations);
       setStatus(`Updated ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Refresh failed");
     } finally {
       setBusy(false);
+      overviewInFlight.current = false;
+    }
+  }, [api]);
+
+  const loadServices = useCallback(async () => {
+    if (servicesInFlight.current) {
+      return;
+    }
+    servicesInFlight.current = true;
+    setServicesBusy(true);
+    try {
+      setServices(await api.services());
+      setStatus(`Services updated ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Services load failed");
+    } finally {
+      setServicesBusy(false);
+      servicesInFlight.current = false;
+    }
+  }, [api]);
+
+  const loadFirewall = useCallback(async () => {
+    if (firewallInFlight.current) {
+      return;
+    }
+    firewallInFlight.current = true;
+    setFirewallBusy(true);
+    try {
+      setFirewall(await api.firewall());
+      setStatus(`Firewall updated ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Firewall load failed");
+    } finally {
+      setFirewallBusy(false);
+      firewallInFlight.current = false;
     }
   }, [api]);
 
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 8000);
+    refreshOverview();
+    const timer = window.setInterval(refreshOverview, 12000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refreshOverview]);
 
-  const run = async (action: () => Promise<unknown>, message: string) => {
+  useEffect(() => {
+    if (tab === "services" && services.length === 0) {
+      loadServices();
+    }
+    if (tab === "firewall" && !firewall) {
+      loadFirewall();
+    }
+  }, [firewall, loadFirewall, loadServices, services.length, tab]);
+
+  const run = async (action: () => Promise<unknown>, message: string, refreshAfter = true) => {
     setBusy(true);
     try {
       await action();
       setStatus(message);
-      await refresh();
+      if (refreshAfter) {
+        if (tab === "services") {
+          await loadServices();
+        } else if (tab === "firewall") {
+          await loadFirewall();
+        } else {
+          await refreshOverview();
+        }
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Action failed");
     } finally {
@@ -182,12 +239,13 @@ function App() {
         invoke("open_ssh", {
           profile: { user: profile.sshUser, host: profile.sshHost, port: Number(profile.sshPort) }
         }),
-      "SSH opened"
+      "SSH opened",
+      false
     );
   };
 
   const testConnection = async () => {
-    await run(() => api.health(), "Connection OK");
+    await run(() => api.health(), "Connection OK", false);
   };
 
   const filteredServices = services.filter((service) => {
@@ -322,7 +380,20 @@ function App() {
             <p>{status}</p>
           </div>
           <div className="button-row">
-            <button className="secondary" onClick={refresh} disabled={busy} title="Refresh">
+            <button
+              className="secondary"
+              onClick={() => {
+                if (tab === "services") {
+                  loadServices();
+                } else if (tab === "firewall") {
+                  loadFirewall();
+                } else {
+                  refreshOverview();
+                }
+              }}
+              disabled={busy || servicesBusy || firewallBusy}
+              title="Refresh"
+            >
               <RefreshCw size={17} className={busy ? "spin" : ""} /> Refresh
             </button>
             <button className="danger" onClick={() => run(() => api.power("reboot"), "Reboot requested")} title="Reboot">
@@ -376,12 +447,17 @@ function App() {
           <section className="panel">
             <div className="panel-head">
               <h2>systemd</h2>
+              <button className="secondary" onClick={loadServices} disabled={servicesBusy} title="Refresh services">
+                <RefreshCw size={16} className={servicesBusy ? "spin" : ""} /> Refresh
+              </button>
               <div className="search">
                 <Search size={16} />
                 <input placeholder="Filter services" value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)} />
               </div>
             </div>
             <div className="service-list">
+              {servicesBusy && services.length === 0 && <div className="empty-state">Loading services...</div>}
+              {!servicesBusy && filteredServices.length === 0 && <div className="empty-state">No services loaded</div>}
               {filteredServices.slice(0, 160).map((service) => (
                 <ServiceRow key={service.name} service={service} api={api} run={run} setSelectedLog={setSelectedLog} />
               ))}
@@ -390,7 +466,7 @@ function App() {
         )}
 
         {tab === "firewall" && (
-          <FirewallPanel firewall={firewall} api={api} run={run} />
+          <FirewallPanel firewall={firewall} api={api} run={run} busy={firewallBusy} refresh={loadFirewall} />
         )}
       </section>
 
@@ -526,11 +602,15 @@ function IntegrationPanel({
 function FirewallPanel({
   firewall,
   api,
-  run
+  run,
+  busy,
+  refresh
 }: {
   firewall: FirewallStatus | null;
   api: AgentApi;
   run: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  busy: boolean;
+  refresh: () => Promise<void>;
 }) {
   const [port, setPort] = useState(443);
   return (
@@ -538,6 +618,9 @@ function FirewallPanel({
       <article className="panel">
         <div className="panel-head">
           <h2>UFW</h2>
+          <button className="secondary" onClick={refresh} disabled={busy} title="Refresh firewall">
+            <RefreshCw size={16} className={busy ? "spin" : ""} /> Refresh
+          </button>
           <StatusPill active={Boolean(firewall?.ufwAvailable)} label={firewall?.ufwAvailable ? "available" : "missing"} />
         </div>
         <div className="rule-form">
@@ -551,6 +634,9 @@ function FirewallPanel({
       <article className="panel">
         <div className="panel-head">
           <h2>iptables</h2>
+          <button className="secondary" onClick={refresh} disabled={busy} title="Refresh firewall">
+            <RefreshCw size={16} className={busy ? "spin" : ""} /> Refresh
+          </button>
           <StatusPill active={Boolean(firewall?.iptablesAvailable)} label={firewall?.iptablesAvailable ? "available" : "missing"} />
         </div>
         <div className="rule-form">

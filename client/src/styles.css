@@ -412,6 +412,17 @@ h2 {
   gap: 8px;
 }
 
+.empty-state {
+  align-items: center;
+  background: #fbfbfd;
+  border: 1px dashed #d8d8de;
+  border-radius: 8px;
+  color: #6e6e73;
+  display: flex;
+  min-height: 56px;
+  padding: 0 14px;
+}
+
 .service-row {
   align-items: center;
   background: #fbfbfd;

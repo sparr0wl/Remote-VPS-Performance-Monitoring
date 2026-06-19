@@ -27,7 +27,13 @@ struct AgentResponse {
 }
 
 #[tauri::command]
-fn agent_request(request: AgentRequest) -> Result<AgentResponse, String> {
+async fn agent_request(request: AgentRequest) -> Result<AgentResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || agent_request_blocking(request))
+        .await
+        .map_err(|err| format!("agent request task failed: {}", err))?
+}
+
+fn agent_request_blocking(request: AgentRequest) -> Result<AgentResponse, String> {
     let endpoint = parse_http_endpoint(&request.endpoint)?;
     let method = request.method.to_ascii_uppercase();
     if method != "GET" && method != "POST" {

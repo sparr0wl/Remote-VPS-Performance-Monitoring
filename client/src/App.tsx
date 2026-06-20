@@ -660,7 +660,7 @@ function FirewallPanel({
 
   return (
     <>
-      <section className="firewall-grid">
+      <section className={`firewall-grid ${showUfw !== showIptables ? "single-tool" : ""}`}>
         {showUfw && (
           <article className="panel">
             <div className="panel-head">

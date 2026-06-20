@@ -629,6 +629,10 @@ h3 {
   grid-template-columns: repeat(2, minmax(300px, 1fr));
 }
 
+.firewall-grid.single-tool {
+  grid-template-columns: 1fr;
+}
+
 .firewall-summary {
   display: grid;
   gap: 12px;

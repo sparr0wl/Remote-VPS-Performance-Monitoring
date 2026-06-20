@@ -24,7 +24,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentApi } from "./api";
 import type { FirewallStatus, Integration, Metrics, Profile, Service } from "./types";
 import type { ReactNode } from "react";
@@ -83,11 +83,16 @@ function App() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
+  const [servicesBusy, setServicesBusy] = useState(false);
+  const [firewallBusy, setFirewallBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem("vps-monitor-theme");
     return saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
   });
+  const overviewInFlight = useRef(false);
+  const servicesInFlight = useRef(false);
+  const firewallInFlight = useRef(false);
 
   const profile = profiles.find((item) => item.id === activeProfileId) ?? profiles[0];
   const api = useMemo(() => new AgentApi(profile), [profile]);
@@ -158,39 +163,91 @@ function App() {
     setStatus("Server removed");
   };
 
-  const refresh = useCallback(async () => {
+  const refreshOverview = useCallback(async () => {
+    if (overviewInFlight.current) {
+      return;
+    }
+    overviewInFlight.current = true;
     setBusy(true);
     try {
-      const [nextMetrics, nextServices, nextFirewall, nextIntegrations] = await Promise.all([
+      const [nextMetrics, nextIntegrations] = await Promise.all([
         api.metrics(),
-        api.services(),
-        api.firewall(),
         api.integrations()
       ]);
       setMetrics(nextMetrics);
-      setServices(nextServices);
-      setFirewall(nextFirewall);
       setIntegrations(nextIntegrations);
       setStatus(`Updated ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Refresh failed");
     } finally {
       setBusy(false);
+      overviewInFlight.current = false;
+    }
+  }, [api]);
+
+  const loadServices = useCallback(async () => {
+    if (servicesInFlight.current) {
+      return;
+    }
+    servicesInFlight.current = true;
+    setServicesBusy(true);
+    try {
+      setServices(await api.services());
+      setStatus(`Services updated ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Services load failed");
+    } finally {
+      setServicesBusy(false);
+      servicesInFlight.current = false;
+    }
+  }, [api]);
+
+  const loadFirewall = useCallback(async () => {
+    if (firewallInFlight.current) {
+      return;
+    }
+    firewallInFlight.current = true;
+    setFirewallBusy(true);
+    try {
+      setFirewall(await api.firewall());
+      setStatus(`Firewall updated ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Firewall load failed");
+    } finally {
+      setFirewallBusy(false);
+      firewallInFlight.current = false;
     }
   }, [api]);
 
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 8000);
+    refreshOverview();
+    const timer = window.setInterval(refreshOverview, 12000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refreshOverview]);
 
-  const run = async (action: () => Promise<unknown>, message: string) => {
+  useEffect(() => {
+    if (tab === "services" && services.length === 0) {
+      loadServices();
+    }
+    if (tab === "firewall" && !firewall) {
+      loadFirewall();
+    }
+  }, [firewall, loadFirewall, loadServices, services.length, tab]);
+
+  const run = async (action: () => Promise<unknown>, message: string, refreshAfter = true) => {
     setBusy(true);
     try {
       await action();
       setStatus(message);
-      await refresh();
+      if (refreshAfter) {
+        if (tab === "services") {
+          await loadServices();
+        } else if (tab === "firewall") {
+          await loadFirewall();
+        } else {
+          await refreshOverview();
+        }
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Action failed");
     } finally {
@@ -204,12 +261,13 @@ function App() {
         invoke("open_ssh", {
           profile: { user: profile.sshUser, host: profile.sshHost, port: Number(profile.sshPort) }
         }),
-      "SSH opened"
+      "SSH opened",
+      false
     );
   };
 
   const testConnection = async () => {
-    await run(() => api.health(), "Connection OK");
+    await run(() => api.health(), "Connection OK", false);
   };
 
   const filteredServices = services.filter((service) => {
@@ -298,7 +356,7 @@ function App() {
           </div>
         </section>
 
-        <details className="connection-card" open>
+        <details className="connection-card">
           <summary>Connection</summary>
           <section className="profile">
             <label>
@@ -359,7 +417,20 @@ function App() {
             <p>{status}</p>
           </div>
           <div className="button-row">
-            <button className="secondary" onClick={refresh} disabled={busy} title="Refresh">
+            <button
+              className="secondary"
+              onClick={() => {
+                if (tab === "services") {
+                  loadServices();
+                } else if (tab === "firewall") {
+                  loadFirewall();
+                } else {
+                  refreshOverview();
+                }
+              }}
+              disabled={busy || servicesBusy || firewallBusy}
+              title="Refresh"
+            >
               <RefreshCw size={17} className={busy ? "spin" : ""} /> Refresh
             </button>
             <button className="danger" onClick={() => run(() => api.power("reboot"), "Reboot requested")} title="Reboot">
@@ -413,12 +484,17 @@ function App() {
           <section className="panel">
             <div className="panel-head">
               <h2>systemd</h2>
+              <button className="secondary" onClick={loadServices} disabled={servicesBusy} title="Refresh services">
+                <RefreshCw size={16} className={servicesBusy ? "spin" : ""} /> Refresh
+              </button>
               <div className="search">
                 <Search size={16} />
                 <input placeholder="Filter services" value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)} />
               </div>
             </div>
             <div className="service-list">
+              {servicesBusy && services.length === 0 && <div className="empty-state">Loading services...</div>}
+              {!servicesBusy && filteredServices.length === 0 && <div className="empty-state">No services loaded</div>}
               {filteredServices.slice(0, 160).map((service) => (
                 <ServiceRow key={service.name} service={service} api={api} run={run} setSelectedLog={setSelectedLog} />
               ))}
@@ -427,7 +503,7 @@ function App() {
         )}
 
         {tab === "firewall" && (
-          <FirewallPanel firewall={firewall} api={api} run={run} />
+          <FirewallPanel firewall={firewall} api={api} run={run} busy={firewallBusy} refresh={loadFirewall} />
         )}
       </section>
 
@@ -568,64 +644,343 @@ function IntegrationPanel({
 function FirewallPanel({
   firewall,
   api,
-  run
+  run,
+  busy,
+  refresh
 }: {
   firewall: FirewallStatus | null;
   api: AgentApi;
   run: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  busy: boolean;
+  refresh: () => Promise<void>;
 }) {
-  const [port, setPort] = useState(443);
-  return (
-    <section className="firewall-grid">
-      <article className="panel">
-        <div className="panel-head">
-          <h2>UFW</h2>
-          <StatusPill active={Boolean(firewall?.ufwAvailable)} label={firewall?.ufwAvailable ? "available" : "missing"} />
-        </div>
-        <div className="rule-form">
-          <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
-          <button onClick={() => run(() => api.ufw("allow", port), "UFW rule added")}>Allow</button>
-          <button className="secondary" onClick={() => run(() => api.ufw("delete", port), "UFW rule deleted")}>Delete</button>
-        </div>
-        <pre className="logs compact">{firewall?.ufwStatus || "UFW status unavailable"}</pre>
-      </article>
+  const [activeTool, setActiveTool] = useState<"ufw" | "iptables" | null>(null);
+  const showUfw = Boolean(firewall?.ufwAvailable);
+  const showIptables = Boolean(firewall?.iptablesAvailable);
 
-      <article className="panel">
-        <div className="panel-head">
-          <h2>iptables</h2>
-          <StatusPill active={Boolean(firewall?.iptablesAvailable)} label={firewall?.iptablesAvailable ? "available" : "missing"} />
-        </div>
-        <div className="rule-form">
-          <button
-            onClick={() =>
-              run(
-                () => api.iptables({ operation: "add", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
-                "iptables rule added"
-              )
-            }
-          >
-            Accept TCP
-          </button>
-          <button
-            className="secondary"
-            onClick={() =>
-              run(
-                () => api.iptables({ operation: "delete", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
-                "iptables rule deleted"
-              )
-            }
-          >
-            Delete TCP
-          </button>
-        </div>
-        <pre className="logs compact">{firewall?.iptablesRules.join("\n") || "iptables rules unavailable"}</pre>
-      </article>
-    </section>
+  return (
+    <>
+      <section className="firewall-grid">
+        {showUfw && (
+          <article className="panel">
+            <div className="panel-head">
+              <h2>UFW</h2>
+              <button className="secondary" onClick={refresh} disabled={busy} title="Refresh firewall">
+                <RefreshCw size={16} className={busy ? "spin" : ""} /> Refresh
+              </button>
+              <StatusPill active label="available" />
+            </div>
+            <div className="firewall-summary">
+              <pre className="logs compact">{firewall?.ufwStatus}</pre>
+              <button onClick={() => setActiveTool("ufw")}>
+                <Shield size={17} /> Manage UFW
+              </button>
+            </div>
+          </article>
+        )}
+
+        {showIptables && (
+          <article className="panel">
+            <div className="panel-head">
+              <h2>iptables</h2>
+              <button className="secondary" onClick={refresh} disabled={busy} title="Refresh firewall">
+                <RefreshCw size={16} className={busy ? "spin" : ""} /> Refresh
+              </button>
+              <StatusPill active label="available" />
+            </div>
+            <div className="firewall-summary">
+              <pre className="logs compact">{firewall?.iptablesRules.join("\n")}</pre>
+              <button onClick={() => setActiveTool("iptables")}>
+                <Shield size={17} /> Manage iptables
+              </button>
+            </div>
+          </article>
+        )}
+
+        {!busy && !showUfw && !showIptables && <div className="empty-state">No firewall tools detected</div>}
+      </section>
+
+      {activeTool === "ufw" && <UfwDialog api={api} run={run} onClose={() => setActiveTool(null)} />}
+      {activeTool === "iptables" && <IPTablesDialog api={api} run={run} onClose={() => setActiveTool(null)} />}
+    </>
+  );
+}
+
+function UfwDialog({
+  api,
+  run,
+  onClose
+}: {
+  api: AgentApi;
+  run: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [operation, setOperation] = useState<"allow" | "deny" | "reject" | "limit" | "delete">("allow");
+  const [ruleAction, setRuleAction] = useState<"allow" | "deny" | "reject" | "limit">("allow");
+  const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
+  const [port, setPort] = useState(443);
+  const [ruleNumber, setRuleNumber] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [policy, setPolicy] = useState<"allow" | "deny" | "reject">("deny");
+  const [direction, setDirection] = useState<"incoming" | "outgoing" | "routed">("incoming");
+
+  const submitRule = () =>
+    run(
+      () =>
+        api.ufw({
+          operation,
+          ruleAction: operation === "delete" ? ruleAction : undefined,
+          ruleNumber: operation === "delete" && ruleNumber ? Number(ruleNumber) : undefined,
+          port: operation === "delete" && ruleNumber ? undefined : port,
+          protocol,
+          from: from || undefined,
+          to: to || undefined
+        }),
+      "UFW rule applied"
+    );
+
+  return (
+    <Modal title="UFW Manager" onClose={onClose}>
+      <div className="firewall-manager">
+        <section className="manager-section">
+          <h3>Service</h3>
+          <div className="action-grid">
+            <button onClick={() => run(() => api.ufw({ operation: "enable" }), "UFW enabled")}>Enable</button>
+            <button className="secondary" onClick={() => run(() => api.ufw({ operation: "disable" }), "UFW disabled")}>Disable</button>
+            <button className="secondary" onClick={() => run(() => api.ufw({ operation: "reload" }), "UFW reloaded")}>Reload</button>
+            <button className="danger" onClick={() => window.confirm("Reset all UFW rules?") && run(() => api.ufw({ operation: "reset" }), "UFW reset")}>Reset</button>
+          </div>
+        </section>
+
+        <section className="manager-section">
+          <h3>Default policy</h3>
+          <div className="form-grid three">
+            <label>
+              Policy
+              <select value={policy} onChange={(event) => setPolicy(event.target.value as typeof policy)}>
+                <option value="allow">Allow</option>
+                <option value="deny">Deny</option>
+                <option value="reject">Reject</option>
+              </select>
+            </label>
+            <label>
+              Direction
+              <select value={direction} onChange={(event) => setDirection(event.target.value as typeof direction)}>
+                <option value="incoming">Incoming</option>
+                <option value="outgoing">Outgoing</option>
+                <option value="routed">Routed</option>
+              </select>
+            </label>
+            <button onClick={() => run(() => api.ufw({ operation: "default", policy, direction }), "UFW default policy changed")}>
+              Apply
+            </button>
+          </div>
+        </section>
+
+        <section className="manager-section">
+          <h3>Rule</h3>
+          <div className="form-grid">
+            <label>
+              Operation
+              <select value={operation} onChange={(event) => setOperation(event.target.value as typeof operation)}>
+                <option value="allow">Allow</option>
+                <option value="deny">Deny</option>
+                <option value="reject">Reject</option>
+                <option value="limit">Limit</option>
+                <option value="delete">Delete</option>
+              </select>
+            </label>
+            {operation === "delete" && (
+              <label>
+                Delete type
+                <select value={ruleAction} onChange={(event) => setRuleAction(event.target.value as typeof ruleAction)}>
+                  <option value="allow">Allow</option>
+                  <option value="deny">Deny</option>
+                  <option value="reject">Reject</option>
+                  <option value="limit">Limit</option>
+                </select>
+              </label>
+            )}
+            {operation === "delete" && (
+              <label>
+                Rule number
+                <input placeholder="Optional" value={ruleNumber} type="number" min={1} onChange={(event) => setRuleNumber(event.target.value)} />
+              </label>
+            )}
+            <label>
+              Protocol
+              <select value={protocol} onChange={(event) => setProtocol(event.target.value as typeof protocol)}>
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+              </select>
+            </label>
+            <label>
+              Port
+              <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
+            </label>
+            <label>
+              From
+              <input placeholder="Any source" value={from} onChange={(event) => setFrom(event.target.value)} />
+            </label>
+            <label>
+              To
+              <input placeholder="Any destination" value={to} onChange={(event) => setTo(event.target.value)} />
+            </label>
+          </div>
+          <div className="modal-actions">
+            <button onClick={submitRule}>Apply rule</button>
+          </div>
+        </section>
+      </div>
+    </Modal>
+  );
+}
+
+function IPTablesDialog({
+  api,
+  run,
+  onClose
+}: {
+  api: AgentApi;
+  run: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [operation, setOperation] = useState<"append" | "insert" | "delete" | "policy" | "flush" | "zero">("append");
+  const [table, setTable] = useState<"filter" | "nat" | "mangle" | "raw" | "security">("filter");
+  const [chain, setChain] = useState<"INPUT" | "OUTPUT" | "FORWARD" | "PREROUTING" | "POSTROUTING">("INPUT");
+  const [protocol, setProtocol] = useState<"" | "tcp" | "udp" | "icmp">("tcp");
+  const [target, setTarget] = useState<"ACCEPT" | "DROP" | "REJECT" | "LOG" | "RETURN" | "MASQUERADE" | "DNAT" | "SNAT">("ACCEPT");
+  const [sport, setSport] = useState("");
+  const [dport, setDport] = useState("443");
+  const [source, setSource] = useState("");
+  const [destination, setDestination] = useState("");
+  const [inInterface, setInInterface] = useState("");
+  const [outInterface, setOutInterface] = useState("");
+
+  const submit = () =>
+    (operation !== "flush" && operation !== "zero" || window.confirm(`Apply iptables ${operation} to ${table}/${chain}?`)) &&
+    run(
+      () =>
+        api.iptables({
+          operation,
+          table,
+          chain,
+          protocol: protocol || undefined,
+          sport: sport ? Number(sport) : undefined,
+          dport: dport ? Number(dport) : undefined,
+          source: source || undefined,
+          destination: destination || undefined,
+          inInterface: inInterface || undefined,
+          outInterface: outInterface || undefined,
+          target
+        }),
+      "iptables command applied"
+    );
+
+  return (
+    <Modal title="iptables Manager" onClose={onClose}>
+      <div className="firewall-manager">
+        <section className="manager-section">
+          <h3>Command</h3>
+          <div className="form-grid three">
+            <label>
+              Operation
+              <select value={operation} onChange={(event) => setOperation(event.target.value as typeof operation)}>
+                <option value="append">Append rule</option>
+                <option value="insert">Insert rule</option>
+                <option value="delete">Delete rule</option>
+                <option value="policy">Set policy</option>
+                <option value="flush">Flush chain</option>
+                <option value="zero">Zero counters</option>
+              </select>
+            </label>
+            <label>
+              Table
+              <select value={table} onChange={(event) => setTable(event.target.value as typeof table)}>
+                <option value="filter">filter</option>
+                <option value="nat">nat</option>
+                <option value="mangle">mangle</option>
+                <option value="raw">raw</option>
+                <option value="security">security</option>
+              </select>
+            </label>
+            <label>
+              Chain
+              <select value={chain} onChange={(event) => setChain(event.target.value as typeof chain)}>
+                <option value="INPUT">INPUT</option>
+                <option value="OUTPUT">OUTPUT</option>
+                <option value="FORWARD">FORWARD</option>
+                <option value="PREROUTING">PREROUTING</option>
+                <option value="POSTROUTING">POSTROUTING</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section className="manager-section">
+          <h3>Match</h3>
+          <div className="form-grid">
+            <label>
+              Protocol
+              <select value={protocol} onChange={(event) => setProtocol(event.target.value as typeof protocol)}>
+                <option value="">Any</option>
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+                <option value="icmp">ICMP</option>
+              </select>
+            </label>
+            <label>
+              Source port
+              <input value={sport} type="number" min={1} max={65535} onChange={(event) => setSport(event.target.value)} />
+            </label>
+            <label>
+              Destination port
+              <input value={dport} type="number" min={1} max={65535} onChange={(event) => setDport(event.target.value)} />
+            </label>
+            <label>
+              Source
+              <input placeholder="0.0.0.0/0" value={source} onChange={(event) => setSource(event.target.value)} />
+            </label>
+            <label>
+              Destination
+              <input placeholder="0.0.0.0/0" value={destination} onChange={(event) => setDestination(event.target.value)} />
+            </label>
+            <label>
+              Input interface
+              <input placeholder="eth0" value={inInterface} onChange={(event) => setInInterface(event.target.value)} />
+            </label>
+            <label>
+              Output interface
+              <input placeholder="eth0" value={outInterface} onChange={(event) => setOutInterface(event.target.value)} />
+            </label>
+            <label>
+              Target
+              <select value={target} onChange={(event) => setTarget(event.target.value as typeof target)}>
+                <option value="ACCEPT">ACCEPT</option>
+                <option value="DROP">DROP</option>
+                <option value="REJECT">REJECT</option>
+                <option value="LOG">LOG</option>
+                <option value="RETURN">RETURN</option>
+                <option value="MASQUERADE">MASQUERADE</option>
+                <option value="DNAT">DNAT</option>
+                <option value="SNAT">SNAT</option>
+              </select>
+            </label>
+          </div>
+          <div className="modal-actions">
+            <button className={operation === "flush" || operation === "zero" ? "danger" : ""} onClick={submit}>
+              Apply command
+            </button>
+          </div>
+        </section>
+      </div>
+    </Modal>
   );
 }
 
 function StatusPill({ active, label }: { active: boolean; label: string }) {
-  return <span className={`pill ${active ? "ok" : "muted"}`}>{label}</span>;
+  return <span className={`pill ${active ? "ok" : "muted"}`}>{formatStatusLabel(label)}</span>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
@@ -654,6 +1009,11 @@ function formatBytes(value: number) {
     unit += 1;
   }
   return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatStatusLabel(value: string) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export default App;

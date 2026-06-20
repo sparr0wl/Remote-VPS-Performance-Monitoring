@@ -374,6 +374,7 @@ label {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -386,6 +387,12 @@ h1 {
 
 h2 {
   font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+h3 {
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 0;
 }
@@ -543,6 +550,17 @@ h2 {
   gap: 8px;
 }
 
+.empty-state {
+  align-items: center;
+  background: #fbfbfd;
+  border: 1px dashed #d8d8de;
+  border-radius: 8px;
+  color: #6e6e73;
+  display: flex;
+  min-height: 56px;
+  padding: 0 14px;
+}
+
 .service-row {
   align-items: center;
   background: var(--surface-soft);
@@ -588,6 +606,11 @@ h2 {
   justify-content: center;
   min-width: 82px;
   padding: 0 10px;
+  text-align: center;
+}
+
+.service-row .pill {
+  justify-self: center;
 }
 
 .pill.ok {
@@ -604,6 +627,11 @@ h2 {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(2, minmax(300px, 1fr));
+}
+
+.firewall-summary {
+  display: grid;
+  gap: 12px;
 }
 
 .rule-form {
@@ -673,6 +701,38 @@ h2 {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.firewall-manager {
+  display: grid;
+  gap: 16px;
+}
+
+.manager-section {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.action-grid,
+.form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.action-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.three {
+  align-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .spin {
@@ -861,7 +921,10 @@ h2 {
   }
 
   .integration-panel .integration-actions,
-  .rule-form {
+  .rule-form,
+  .action-grid,
+  .form-grid,
+  .form-grid.three {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
@@ -906,8 +969,8 @@ h2 {
     width: 100%;
   }
 
-  .pill {
-    justify-self: start;
+  .service-row .pill {
+    justify-self: center;
   }
 
   .logs.compact {
@@ -922,6 +985,7 @@ h2 {
   .modal {
     align-self: center;
     max-height: 92vh;
+    overflow: auto;
     width: 100%;
   }
 
@@ -955,7 +1019,10 @@ h2 {
   .topbar .button-row,
   .connection-actions,
   .integration-panel .integration-actions,
-  .rule-form {
+  .rule-form,
+  .action-grid,
+  .form-grid,
+  .form-grid.three {
     grid-template-columns: 1fr;
   }
 

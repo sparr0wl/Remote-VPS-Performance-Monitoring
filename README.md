@@ -1,6 +1,6 @@
 # Remote VPS Performance Monitoring
 
-Desktop app and Linux agent for monitoring and managing VPS instances.
+Desktop app and Linux agent for monitoring and managing up to 10 VPS instances.
 
 ## Stack
 
@@ -24,6 +24,22 @@ Desktop app and Linux agent for monitoring and managing VPS instances.
   - Automatic timestamped backups before config writes.
   - Validation before applying changes.
 - SSH quick connect from the desktop client using the system terminal.
+- Mobile-friendly web layout for the client UI.
+- Local profile storage for up to 10 VPS servers.
+
+## Agent Installer
+
+The agent includes a Bash installer for Linux VPS hosts. It:
+
+- builds the agent automatically when Go is installed and no binary is provided;
+- installs `/usr/local/bin/vps-monitor-agent`;
+- installs and enables `vps-monitor-agent.service`;
+- checks whether the agent is already installed and running before reinstalling;
+- creates `/etc/vps-monitor/config.yaml` only when it does not exist;
+- generates a random API token on first install;
+- prints the generated token once during installation;
+- stores the token only in `/etc/vps-monitor/config.yaml`;
+- detects and offers a choice of existing Caddy and Xray config files when several are present.
 
 ## Repository Layout
 
@@ -39,15 +55,23 @@ Install Go 1.22+ on the VPS, then:
 ```bash
 cd agent
 go build -o bin/vps-monitor-agent ./cmd/vps-agent
-sudo install -m 0755 bin/vps-monitor-agent /usr/local/bin/vps-monitor-agent
-sudo install -d -m 0750 /etc/vps-monitor
-sudo install -m 0640 config.example.yaml /etc/vps-monitor/config.yaml
-sudo install -m 0644 install/vps-monitor-agent.service /etc/systemd/system/vps-monitor-agent.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now vps-monitor-agent
+sudo ./install/install.sh bin/vps-monitor-agent
 ```
 
-Edit `/etc/vps-monitor/config.yaml` and replace the default token before exposing the API.
+If `bin/vps-monitor-agent` does not exist and Go is installed, the installer can build it automatically:
+
+```bash
+cd agent
+sudo ./install/install.sh
+```
+
+Save the API token printed by the installer. It is shown only once. If `/etc/vps-monitor/config.yaml` already exists, the installer keeps the existing token and config paths.
+
+The service can be checked with:
+
+```bash
+systemctl status --no-pager vps-monitor-agent
+```
 
 ## Desktop Quick Start
 
@@ -58,6 +82,16 @@ cd client
 pnpm install
 pnpm tauri dev
 ```
+
+For web-only development:
+
+```bash
+cd client
+pnpm install
+pnpm dev
+```
+
+The client stores VPS profiles locally in the browser/app storage. Use the server picker to add, remove, and switch between up to 10 servers.
 
 ## Security Notes
 

@@ -42,20 +42,35 @@ export class AgentApi {
     return this.request<FirewallStatus>("/api/firewall");
   }
 
-  ufw(operation: string, port?: number, protocol = "tcp") {
+  ufw(body: {
+    operation: "enable" | "disable" | "status" | "reload" | "reset" | "default" | "allow" | "deny" | "reject" | "limit" | "delete";
+    ruleAction?: "allow" | "deny" | "reject" | "limit";
+    ruleNumber?: number;
+    port?: number;
+    protocol?: "tcp" | "udp";
+    from?: string;
+    to?: string;
+    policy?: "allow" | "deny" | "reject";
+    direction?: "incoming" | "outgoing" | "routed";
+  }) {
     return this.request<CommandResult>("/api/firewall/ufw", {
       method: "POST",
-      body: JSON.stringify({ operation, port, protocol })
+      body: JSON.stringify(body)
     });
   }
 
   iptables(body: {
-    operation: "add" | "delete";
-    chain: "INPUT" | "OUTPUT" | "FORWARD";
+    operation: "append" | "add" | "insert" | "delete" | "policy" | "flush" | "zero";
+    table?: "filter" | "nat" | "mangle" | "raw" | "security";
+    chain: "INPUT" | "OUTPUT" | "FORWARD" | "PREROUTING" | "POSTROUTING";
     protocol?: "tcp" | "udp" | "icmp";
+    sport?: number;
     dport?: number;
     source?: string;
-    target: "ACCEPT" | "DROP" | "REJECT";
+    destination?: string;
+    inInterface?: string;
+    outInterface?: string;
+    target: "ACCEPT" | "DROP" | "REJECT" | "LOG" | "RETURN" | "MASQUERADE" | "DNAT" | "SNAT";
   }) {
     return this.request<CommandResult>("/api/firewall/iptables", {
       method: "POST",

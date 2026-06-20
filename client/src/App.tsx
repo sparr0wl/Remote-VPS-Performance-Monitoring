@@ -8,6 +8,8 @@ import {
   HardDrive,
   Menu,
   MemoryStick,
+  Monitor,
+  Moon,
   Network,
   Plus,
   PlugZap,
@@ -17,6 +19,7 @@ import {
   Search,
   Server,
   Shield,
+  Sun,
   SquareTerminal,
   Trash2,
   X
@@ -37,6 +40,7 @@ const defaultProfile: Profile = {
 };
 
 type Tab = "overview" | "services" | "firewall";
+type ThemeMode = "auto" | "light" | "dark";
 const maxProfiles = 10;
 
 function createProfile(index: number): Profile {
@@ -80,6 +84,10 @@ function App() {
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem("vps-monitor-theme");
+    return saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
+  });
 
   const profile = profiles.find((item) => item.id === activeProfileId) ?? profiles[0];
   const api = useMemo(() => new AgentApi(profile), [profile]);
@@ -94,6 +102,20 @@ function App() {
     localStorage.setItem("vps-monitor-profiles", JSON.stringify(profiles));
     localStorage.setItem("vps-monitor-active-profile", profile.id);
   }, [profile.id, profiles]);
+
+  useEffect(() => {
+    const applyTheme = () => {
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const resolved = themeMode === "auto" ? (systemDark ? "dark" : "light") : themeMode;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themeMode = themeMode;
+      localStorage.setItem("vps-monitor-theme", themeMode);
+    };
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [themeMode]);
 
   const updateProfile = (patch: Partial<Profile>) => {
     setProfiles((current) => current.map((item) => (item.id === profile.id ? { ...item, ...patch } : item)));
@@ -260,6 +282,21 @@ function App() {
             <Shield size={18} /> Firewall
           </button>
         </nav>
+
+        <section className="theme-card">
+          <span>Theme</span>
+          <div className="theme-toggle">
+            <button className={themeMode === "auto" ? "active" : ""} onClick={() => setThemeMode("auto")} title="Auto theme">
+              <Monitor size={16} /> Auto
+            </button>
+            <button className={themeMode === "light" ? "active" : ""} onClick={() => setThemeMode("light")} title="Light theme">
+              <Sun size={16} /> Light
+            </button>
+            <button className={themeMode === "dark" ? "active" : ""} onClick={() => setThemeMode("dark")} title="Dark theme">
+              <Moon size={16} /> Dark
+            </button>
+          </div>
+        </section>
 
         <details className="connection-card" open>
           <summary>Connection</summary>
@@ -489,15 +526,20 @@ function IntegrationPanel({
 }) {
   return (
     <article className="integration-panel">
-      <div>
+      <div className="integration-main">
         <div className="integration-title">
           <PlugZap size={18} />
-          <h2>{item.name}</h2>
+          <div>
+            <h2>{item.name}</h2>
+            <p>{item.serviceName}</p>
+          </div>
         </div>
-        <p>{item.serviceName}</p>
+        <div className="integration-meta">
+          <span>{item.configPath ?? "Config path unavailable"}</span>
+        </div>
       </div>
       <StatusPill active={item.service?.activeState === "active"} label={item.service?.activeState ?? "unknown"} />
-      <div className="button-row">
+      <div className="integration-actions">
         <button className="secondary" onClick={() => run(() => api.integrationAction(item.id, "restart"), `${item.name} restarted`)}>
           <RefreshCw size={17} /> Restart
         </button>

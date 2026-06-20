@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "VPS Monitor",
-        "width": 1240,
-        "height": 820,
-        "minWidth": 980,
-        "minHeight": 680,
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1120,
+        "minHeight": 720,
         "resizable": true,
         "fullscreen": false
       }

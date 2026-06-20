@@ -457,6 +457,11 @@ h2 {
   justify-content: center;
   min-width: 82px;
   padding: 0 10px;
+  text-align: center;
+}
+
+.service-row .pill {
+  justify-self: center;
 }
 
 .pill.ok {
@@ -775,8 +780,8 @@ h2 {
     width: 100%;
   }
 
-  .pill {
-    justify-self: start;
+  .service-row .pill {
+    justify-self: center;
   }
 
   .logs.compact {

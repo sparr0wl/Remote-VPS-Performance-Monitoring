@@ -261,7 +261,7 @@ function App() {
           </button>
         </nav>
 
-        <details className="connection-card" open>
+        <details className="connection-card">
           <summary>Connection</summary>
           <section className="profile">
             <label>
@@ -533,57 +533,64 @@ function FirewallPanel({
   run: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   const [port, setPort] = useState(443);
+  const showUfw = Boolean(firewall?.ufwAvailable);
+  const showIptables = Boolean(firewall?.iptablesAvailable);
+
   return (
     <section className="firewall-grid">
-      <article className="panel">
-        <div className="panel-head">
-          <h2>UFW</h2>
-          <StatusPill active={Boolean(firewall?.ufwAvailable)} label={firewall?.ufwAvailable ? "available" : "missing"} />
-        </div>
-        <div className="rule-form">
-          <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
-          <button onClick={() => run(() => api.ufw("allow", port), "UFW rule added")}>Allow</button>
-          <button className="secondary" onClick={() => run(() => api.ufw("delete", port), "UFW rule deleted")}>Delete</button>
-        </div>
-        <pre className="logs compact">{firewall?.ufwStatus || "UFW status unavailable"}</pre>
-      </article>
+      {showUfw && (
+        <article className="panel">
+          <div className="panel-head">
+            <h2>UFW</h2>
+            <StatusPill active label="available" />
+          </div>
+          <div className="rule-form">
+            <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
+            <button onClick={() => run(() => api.ufw("allow", port), "UFW rule added")}>Allow</button>
+            <button className="secondary" onClick={() => run(() => api.ufw("delete", port), "UFW rule deleted")}>Delete</button>
+          </div>
+          <pre className="logs compact">{firewall?.ufwStatus}</pre>
+        </article>
+      )}
 
-      <article className="panel">
-        <div className="panel-head">
-          <h2>iptables</h2>
-          <StatusPill active={Boolean(firewall?.iptablesAvailable)} label={firewall?.iptablesAvailable ? "available" : "missing"} />
-        </div>
-        <div className="rule-form">
-          <button
-            onClick={() =>
-              run(
-                () => api.iptables({ operation: "add", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
-                "iptables rule added"
-              )
-            }
-          >
-            Accept TCP
-          </button>
-          <button
-            className="secondary"
-            onClick={() =>
-              run(
-                () => api.iptables({ operation: "delete", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
-                "iptables rule deleted"
-              )
-            }
-          >
-            Delete TCP
-          </button>
-        </div>
-        <pre className="logs compact">{firewall?.iptablesRules.join("\n") || "iptables rules unavailable"}</pre>
-      </article>
+      {showIptables && (
+        <article className="panel">
+          <div className="panel-head">
+            <h2>iptables</h2>
+            <StatusPill active label="available" />
+          </div>
+          <div className="rule-form">
+            <button
+              onClick={() =>
+                run(
+                  () => api.iptables({ operation: "add", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
+                  "iptables rule added"
+                )
+              }
+            >
+              Accept TCP
+            </button>
+            <button
+              className="secondary"
+              onClick={() =>
+                run(
+                  () => api.iptables({ operation: "delete", chain: "INPUT", protocol: "tcp", dport: port, target: "ACCEPT" }),
+                  "iptables rule deleted"
+                )
+              }
+            >
+              Delete TCP
+            </button>
+          </div>
+          <pre className="logs compact">{firewall?.iptablesRules.join("\n")}</pre>
+        </article>
+      )}
     </section>
   );
 }
 
 function StatusPill({ active, label }: { active: boolean; label: string }) {
-  return <span className={`pill ${active ? "ok" : "muted"}`}>{label}</span>;
+  return <span className={`pill ${active ? "ok" : "muted"}`}>{formatStatusLabel(label)}</span>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
@@ -612,6 +619,11 @@ function formatBytes(value: number) {
     unit += 1;
   }
   return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatStatusLabel(value: string) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export default App;

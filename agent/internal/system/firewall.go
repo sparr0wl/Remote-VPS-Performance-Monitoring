@@ -17,28 +17,29 @@ type FirewallStatus struct {
 }
 
 type UFWRequest struct {
-	Operation string `json:"operation"`
+	Operation  string `json:"operation"`
 	RuleAction string `json:"ruleAction,omitempty"`
-	Port      int    `json:"port,omitempty"`
-	Protocol  string `json:"protocol,omitempty"`
-	From      string `json:"from,omitempty"`
-	To        string `json:"to,omitempty"`
-	Policy    string `json:"policy,omitempty"`
-	Direction string `json:"direction,omitempty"`
+	RuleNumber int    `json:"ruleNumber,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	From       string `json:"from,omitempty"`
+	To         string `json:"to,omitempty"`
+	Policy     string `json:"policy,omitempty"`
+	Direction  string `json:"direction,omitempty"`
 }
 
 type IPTablesRequest struct {
-	Operation string `json:"operation"`
-	Table     string `json:"table,omitempty"`
-	Chain     string `json:"chain"`
-	Protocol  string `json:"protocol,omitempty"`
-	SPort     int    `json:"sport,omitempty"`
-	DPort     int    `json:"dport,omitempty"`
-	Source    string `json:"source,omitempty"`
-	Destination string `json:"destination,omitempty"`
-	InInterface string `json:"inInterface,omitempty"`
+	Operation    string `json:"operation"`
+	Table        string `json:"table,omitempty"`
+	Chain        string `json:"chain"`
+	Protocol     string `json:"protocol,omitempty"`
+	SPort        int    `json:"sport,omitempty"`
+	DPort        int    `json:"dport,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Destination  string `json:"destination,omitempty"`
+	InInterface  string `json:"inInterface,omitempty"`
 	OutInterface string `json:"outInterface,omitempty"`
-	Target    string `json:"target"`
+	Target       string `json:"target"`
 }
 
 var safeAddress = regexp.MustCompile(`^[A-Za-z0-9_.:/-]+$`)
@@ -50,7 +51,7 @@ func Firewall(ctx context.Context, runner Runner) FirewallStatus {
 		IPTablesAvailable: commandExists("iptables"),
 	}
 	if status.UFWAvailable {
-		result, _ := runner.Run(ctx, 10*time.Second, "ufw", "status", "verbose")
+		result, _ := runner.Run(ctx, 10*time.Second, "ufw", "status", "numbered")
 		status.UFWStatus = result.Output
 	}
 	if status.IPTablesAvailable {
@@ -81,6 +82,9 @@ func UFWAction(ctx context.Context, runner Runner, req UFWRequest) (CommandResul
 		}
 		return runner.Run(ctx, 20*time.Second, "ufw", "default", req.Policy, req.Direction)
 	case "allow", "deny", "reject", "limit", "delete":
+		if req.Operation == "delete" && req.RuleNumber > 0 {
+			return runner.Run(ctx, 20*time.Second, "ufw", "--force", "delete", strconv.Itoa(req.RuleNumber))
+		}
 		if req.Port < 1 || req.Port > 65535 {
 			return CommandResult{}, errors.New("invalid port")
 		}
@@ -100,19 +104,27 @@ func UFWAction(ctx context.Context, runner Runner, req UFWRequest) (CommandResul
 			}
 			args = append(args, req.RuleAction)
 		}
+		if req.From == "" && req.To == "" {
+			args = append(args, strconv.Itoa(req.Port)+"/"+req.Protocol)
+			return runner.Run(ctx, 20*time.Second, "ufw", args...)
+		}
 		if req.From != "" {
 			if !safeAddress.MatchString(req.From) {
 				return CommandResult{}, errors.New("invalid source address")
 			}
 			args = append(args, "from", req.From)
+		} else {
+			args = append(args, "from", "any")
 		}
 		if req.To != "" {
 			if !safeAddress.MatchString(req.To) {
 				return CommandResult{}, errors.New("invalid destination address")
 			}
 			args = append(args, "to", req.To)
+		} else {
+			args = append(args, "to", "any")
 		}
-		args = append(args, strconv.Itoa(req.Port)+"/"+req.Protocol)
+		args = append(args, "port", strconv.Itoa(req.Port), "proto", req.Protocol)
 		return runner.Run(ctx, 20*time.Second, "ufw", args...)
 	default:
 		return CommandResult{}, errors.New("unsupported ufw operation")

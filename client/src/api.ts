@@ -45,6 +45,7 @@ export class AgentApi {
   ufw(body: {
     operation: "enable" | "disable" | "status" | "reload" | "reset" | "default" | "allow" | "deny" | "reject" | "limit" | "delete";
     ruleAction?: "allow" | "deny" | "reject" | "limit";
+    ruleNumber?: number;
     port?: number;
     protocol?: "tcp" | "udp";
     from?: string;

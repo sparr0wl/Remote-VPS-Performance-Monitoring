@@ -589,6 +589,7 @@ function UfwDialog({
   const [ruleAction, setRuleAction] = useState<"allow" | "deny" | "reject" | "limit">("allow");
   const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
   const [port, setPort] = useState(443);
+  const [ruleNumber, setRuleNumber] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [policy, setPolicy] = useState<"allow" | "deny" | "reject">("deny");
@@ -600,7 +601,8 @@ function UfwDialog({
         api.ufw({
           operation,
           ruleAction: operation === "delete" ? ruleAction : undefined,
-          port,
+          ruleNumber: operation === "delete" && ruleNumber ? Number(ruleNumber) : undefined,
+          port: operation === "delete" && ruleNumber ? undefined : port,
           protocol,
           from: from || undefined,
           to: to || undefined
@@ -617,7 +619,7 @@ function UfwDialog({
             <button onClick={() => run(() => api.ufw({ operation: "enable" }), "UFW enabled")}>Enable</button>
             <button className="secondary" onClick={() => run(() => api.ufw({ operation: "disable" }), "UFW disabled")}>Disable</button>
             <button className="secondary" onClick={() => run(() => api.ufw({ operation: "reload" }), "UFW reloaded")}>Reload</button>
-            <button className="danger" onClick={() => run(() => api.ufw({ operation: "reset" }), "UFW reset")}>Reset</button>
+            <button className="danger" onClick={() => window.confirm("Reset all UFW rules?") && run(() => api.ufw({ operation: "reset" }), "UFW reset")}>Reset</button>
           </div>
         </section>
 
@@ -668,6 +670,12 @@ function UfwDialog({
                   <option value="reject">Reject</option>
                   <option value="limit">Limit</option>
                 </select>
+              </label>
+            )}
+            {operation === "delete" && (
+              <label>
+                Rule number
+                <input placeholder="Optional" value={ruleNumber} type="number" min={1} onChange={(event) => setRuleNumber(event.target.value)} />
               </label>
             )}
             <label>
@@ -721,6 +729,7 @@ function IPTablesDialog({
   const [outInterface, setOutInterface] = useState("");
 
   const submit = () =>
+    (operation !== "flush" && operation !== "zero" || window.confirm(`Apply iptables ${operation} to ${table}/${chain}?`)) &&
     run(
       () =>
         api.iptables({

@@ -739,6 +739,39 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.rules-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-row {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.rule-row strong,
+.rule-row span {
+  display: block;
+}
+
+.rule-row strong {
+  font-size: 12px;
+}
+
+.rule-row span {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
 .spin {
   animation: spin 900ms linear infinite;
 }

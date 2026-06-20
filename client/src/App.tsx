@@ -700,17 +700,19 @@ function FirewallPanel({
         {!busy && !showUfw && !showIptables && <div className="empty-state">No firewall tools detected</div>}
       </section>
 
-      {activeTool === "ufw" && <UfwDialog api={api} run={run} onClose={() => setActiveTool(null)} />}
+      {activeTool === "ufw" && <UfwDialog firewall={firewall} api={api} run={run} onClose={() => setActiveTool(null)} />}
       {activeTool === "iptables" && <IPTablesDialog api={api} run={run} onClose={() => setActiveTool(null)} />}
     </>
   );
 }
 
 function UfwDialog({
+  firewall,
   api,
   run,
   onClose
 }: {
+  firewall: FirewallStatus | null;
   api: AgentApi;
   run: (action: () => Promise<unknown>, message: string) => Promise<void>;
   onClose: () => void;
@@ -724,6 +726,7 @@ function UfwDialog({
   const [to, setTo] = useState("");
   const [policy, setPolicy] = useState<"allow" | "deny" | "reject">("deny");
   const [direction, setDirection] = useState<"incoming" | "outgoing" | "routed">("incoming");
+  const existingRules = parseUfwRules(firewall?.ufwStatus ?? "");
 
   const submitRule = () =>
     run(
@@ -775,6 +778,30 @@ function UfwDialog({
             <button onClick={() => run(() => api.ufw({ operation: "default", policy, direction }), "UFW default policy changed")}>
               Apply
             </button>
+          </div>
+        </section>
+
+        <section className="manager-section">
+          <h3>Existing rules</h3>
+          <div className="rules-list">
+            {existingRules.length === 0 && <div className="empty-state">No UFW rules found</div>}
+            {existingRules.map((rule) => (
+              <article className="rule-row" key={rule.number}>
+                <div>
+                  <strong>#{rule.number}</strong>
+                  <span>{rule.text}</span>
+                </div>
+                <button
+                  className="danger"
+                  onClick={() =>
+                    window.confirm(`Delete UFW rule #${rule.number}?`) &&
+                    run(() => api.ufw({ operation: "delete", ruleNumber: rule.number }), `UFW rule #${rule.number} deleted`)
+                  }
+                >
+                  Delete
+                </button>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -1014,6 +1041,16 @@ function formatBytes(value: number) {
 function formatStatusLabel(value: string) {
   if (!value) return "";
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function parseUfwRules(status: string) {
+  return status
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^\[\s*(\d+)\]\s+(.+)$/);
+      return match ? { number: Number(match[1]), text: match[2].trim() } : null;
+    })
+    .filter((rule): rule is { number: number; text: string } => Boolean(rule));
 }
 
 export default App;

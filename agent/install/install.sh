@@ -36,7 +36,7 @@ generate_token() {
     openssl rand -hex 32
     return
   fi
-  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
 }
 
 build_binary_if_needed() {

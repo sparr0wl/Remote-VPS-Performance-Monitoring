@@ -10,10 +10,15 @@ import (
 )
 
 type FirewallStatus struct {
-	UFWAvailable      bool     `json:"ufwAvailable"`
-	UFWStatus         string   `json:"ufwStatus"`
-	IPTablesAvailable bool     `json:"iptablesAvailable"`
-	IPTablesRules     []string `json:"iptablesRules"`
+	UFWAvailable      bool           `json:"ufwAvailable"`
+	UFWStatus         string         `json:"ufwStatus"`
+	IPTablesAvailable bool           `json:"iptablesAvailable"`
+	IPTablesRules     []IPTablesRule `json:"iptablesRules"`
+}
+
+type IPTablesRule struct {
+	Table string `json:"table"`
+	Rule  string `json:"rule"`
 }
 
 type UFWRequest struct {
@@ -40,10 +45,12 @@ type IPTablesRequest struct {
 	InInterface  string `json:"inInterface,omitempty"`
 	OutInterface string `json:"outInterface,omitempty"`
 	Target       string `json:"target"`
+	Rule         string `json:"rule,omitempty"`
 }
 
 var safeAddress = regexp.MustCompile(`^[A-Za-z0-9_.:/-]+$`)
 var safeInterface = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
+var safeRuleToken = regexp.MustCompile(`^[A-Za-z0-9_./:,+@=!-]+$`)
 
 func Firewall(ctx context.Context, runner Runner) FirewallStatus {
 	status := FirewallStatus{
@@ -56,9 +63,14 @@ func Firewall(ctx context.Context, runner Runner) FirewallStatus {
 	}
 	if status.IPTablesAvailable {
 		result, _ := runner.Run(ctx, 10*time.Second, "iptables-save")
+		table := "filter"
 		for _, line := range strings.Split(result.Output, "\n") {
+			if strings.HasPrefix(line, "*") {
+				table = strings.TrimPrefix(line, "*")
+				continue
+			}
 			if strings.HasPrefix(line, "-A ") {
-				status.IPTablesRules = append(status.IPTablesRules, line)
+				status.IPTablesRules = append(status.IPTablesRules, IPTablesRule{Table: table, Rule: line})
 			}
 		}
 	}
@@ -144,6 +156,8 @@ func IPTablesAction(ctx context.Context, runner Runner, req IPTablesRequest) (Co
 
 	switch req.Operation {
 	case "append", "add", "insert", "delete":
+	case "deleteExisting":
+		return deleteExistingIPTablesRule(ctx, runner, req.Table, req.Rule)
 	case "policy":
 		if !validIPTablesTarget(req.Target) {
 			return CommandResult{}, errors.New("invalid target")
@@ -210,6 +224,29 @@ func IPTablesAction(ctx context.Context, runner Runner, req IPTablesRequest) (Co
 		args = append(args, "--dport", strconv.Itoa(req.DPort))
 	}
 	args = append(args, "-j", req.Target)
+	return runner.Run(ctx, 20*time.Second, "iptables", args...)
+}
+
+func deleteExistingIPTablesRule(ctx context.Context, runner Runner, table, rule string) (CommandResult, error) {
+	if table == "" {
+		table = "filter"
+	}
+	if !validIPTablesTable(table) {
+		return CommandResult{}, errors.New("invalid iptables table")
+	}
+	fields := strings.Fields(rule)
+	if len(fields) < 3 || fields[0] != "-A" {
+		return CommandResult{}, errors.New("invalid iptables rule")
+	}
+	if !validIPTablesChain(fields[1]) {
+		return CommandResult{}, errors.New("invalid chain")
+	}
+	for _, field := range fields {
+		if !safeRuleToken.MatchString(field) {
+			return CommandResult{}, errors.New("invalid token in iptables rule")
+		}
+	}
+	args := append([]string{"-t", table, "-D", fields[1]}, fields[2:]...)
 	return runner.Run(ctx, 20*time.Second, "iptables", args...)
 }
 

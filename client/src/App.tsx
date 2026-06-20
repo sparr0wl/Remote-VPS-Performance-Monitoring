@@ -689,7 +689,7 @@ function FirewallPanel({
               <StatusPill active label="available" />
             </div>
             <div className="firewall-summary">
-              <pre className="logs compact">{firewall?.iptablesRules.join("\n")}</pre>
+              <pre className="logs compact">{formatIPTablesRules(firewall?.iptablesRules ?? [])}</pre>
               <button onClick={() => setActiveTool("iptables")}>
                 <Shield size={17} /> Manage iptables
               </button>
@@ -701,7 +701,7 @@ function FirewallPanel({
       </section>
 
       {activeTool === "ufw" && <UfwDialog firewall={firewall} api={api} run={run} onClose={() => setActiveTool(null)} />}
-      {activeTool === "iptables" && <IPTablesDialog api={api} run={run} onClose={() => setActiveTool(null)} />}
+      {activeTool === "iptables" && <IPTablesDialog firewall={firewall} api={api} run={run} onClose={() => setActiveTool(null)} />}
     </>
   );
 }
@@ -865,10 +865,12 @@ function UfwDialog({
 }
 
 function IPTablesDialog({
+  firewall,
   api,
   run,
   onClose
 }: {
+  firewall: FirewallStatus | null;
   api: AgentApi;
   run: (action: () => Promise<unknown>, message: string) => Promise<void>;
   onClose: () => void;
@@ -884,6 +886,7 @@ function IPTablesDialog({
   const [destination, setDestination] = useState("");
   const [inInterface, setInInterface] = useState("");
   const [outInterface, setOutInterface] = useState("");
+  const existingRules = firewall?.iptablesRules ?? [];
 
   const submit = () =>
     (operation !== "flush" && operation !== "zero" || window.confirm(`Apply iptables ${operation} to ${table}/${chain}?`)) &&
@@ -942,6 +945,40 @@ function IPTablesDialog({
                 <option value="POSTROUTING">POSTROUTING</option>
               </select>
             </label>
+          </div>
+        </section>
+
+        <section className="manager-section">
+          <h3>Existing rules</h3>
+          <div className="rules-list">
+            {existingRules.length === 0 && <div className="empty-state">No iptables rules found</div>}
+            {existingRules.map((rule, index) => (
+              <article className="rule-row" key={`${rule.table}-${rule.rule}-${index}`}>
+                <div>
+                  <strong>{rule.table}</strong>
+                  <span>{rule.rule}</span>
+                </div>
+                <button
+                  className="danger"
+                  onClick={() =>
+                    window.confirm(`Delete iptables rule from ${rule.table}?`) &&
+                    run(
+                      () =>
+                        api.iptables({
+                          operation: "deleteExisting",
+                          table: normalizeIPTablesTable(rule.table),
+                          chain: "INPUT",
+                          target: "ACCEPT",
+                          rule: rule.rule
+                        }),
+                      "iptables rule deleted"
+                    )
+                  }
+                >
+                  Delete
+                </button>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -1051,6 +1088,23 @@ function parseUfwRules(status: string) {
       return match ? { number: Number(match[1]), text: match[2].trim() } : null;
     })
     .filter((rule): rule is { number: number; text: string } => Boolean(rule));
+}
+
+function formatIPTablesRules(rules: FirewallStatus["iptablesRules"]) {
+  return rules.map((rule) => `[${rule.table}] ${rule.rule}`).join("\n");
+}
+
+function normalizeIPTablesTable(table: string): "filter" | "nat" | "mangle" | "raw" | "security" {
+  switch (table) {
+    case "nat":
+    case "mangle":
+    case "raw":
+    case "security":
+      return table;
+    case "filter":
+    default:
+      return "filter";
+  }
 }
 
 export default App;

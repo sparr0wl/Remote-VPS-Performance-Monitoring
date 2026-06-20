@@ -67,7 +67,7 @@ export class AgentApi {
   }
 
   iptables(body: {
-    operation: "append" | "add" | "insert" | "delete" | "policy" | "flush" | "zero";
+    operation: "append" | "add" | "insert" | "delete" | "deleteExisting" | "policy" | "flush" | "zero";
     table?: "filter" | "nat" | "mangle" | "raw" | "security";
     chain: "INPUT" | "OUTPUT" | "FORWARD" | "PREROUTING" | "POSTROUTING";
     protocol?: "tcp" | "udp" | "icmp";
@@ -78,6 +78,7 @@ export class AgentApi {
     inInterface?: string;
     outInterface?: string;
     target: "ACCEPT" | "DROP" | "REJECT" | "LOG" | "RETURN" | "MASQUERADE" | "DNAT" | "SNAT";
+    rule?: string;
   }) {
     return this.request<CommandResult>("/api/firewall/iptables", {
       method: "POST",

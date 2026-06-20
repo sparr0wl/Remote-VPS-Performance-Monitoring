@@ -33,7 +33,12 @@ export type FirewallStatus = {
   ufwAvailable: boolean;
   ufwStatus: string;
   iptablesAvailable: boolean;
-  iptablesRules: string[];
+  iptablesRules: IPTablesRule[];
+};
+
+export type IPTablesRule = {
+  table: "filter" | "nat" | "mangle" | "raw" | "security" | string;
+  rule: string;
 };
 
 export type Integration = {

@@ -83,6 +83,8 @@ pnpm install
 pnpm tauri dev
 ```
 
+On Linux, the desktop client now prefers Wayland automatically when `WAYLAND_DISPLAY` is present and falls back to X11 when only `DISPLAY` is available. SSH quick connect also recognizes common Wayland-native terminals such as `ptyxis`, `kgx`, `foot`, `kitty`, `wezterm`, and `alacritty`.
+
 For web-only development:
 
 ```bash

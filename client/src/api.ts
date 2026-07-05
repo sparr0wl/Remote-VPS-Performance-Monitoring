@@ -45,8 +45,8 @@ export class AgentApi {
     return this.request<{ logs: string }>(`/api/services/${encodeURIComponent(name)}/logs?lines=${lines}`);
   }
 
-  firewall() {
-    return this.request<FirewallStatus>("/api/firewall");
+  async firewall() {
+    return normalizeFirewallStatus(await this.request<FirewallStatus>("/api/firewall"));
   }
 
   ufw(body: {
@@ -79,6 +79,7 @@ export class AgentApi {
     outInterface?: string;
     target: "ACCEPT" | "DROP" | "REJECT" | "LOG" | "RETURN" | "MASQUERADE" | "DNAT" | "SNAT";
     rule?: string;
+    ruleNumber?: number;
   }) {
     return this.request<CommandResult>("/api/firewall/iptables", {
       method: "POST",
@@ -152,4 +153,50 @@ export class AgentApi {
     }
     return data as T;
   }
+}
+
+function normalizeFirewallStatus(raw: FirewallStatus): FirewallStatus {
+  return {
+    ...raw,
+    ufwAvailable: Boolean(raw?.ufwAvailable),
+    ufwStatus: raw?.ufwStatus ?? "",
+    iptablesAvailable: Boolean(raw?.iptablesAvailable),
+    iptablesRules: normalizeIPTablesRules((raw as FirewallStatus | { iptablesRules?: unknown })?.iptablesRules)
+  };
+}
+
+function normalizeIPTablesRules(value: unknown): FirewallStatus["iptablesRules"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const counters = new Map<string, number>();
+  return value.flatMap((item) => {
+    if (typeof item === "string") {
+      const chain = parseIPTablesChain(item);
+      const table = "filter";
+      const key = `${table}/${chain}`;
+      const number = (counters.get(key) ?? 0) + 1;
+      counters.set(key, number);
+      return [{ table, chain, number, rule: item }];
+    }
+    if (item && typeof item === "object" && "rule" in item && typeof item.rule === "string") {
+      const table = typeof item.table === "string" ? item.table : "filter";
+      const chain = typeof item.chain === "string" ? item.chain : parseIPTablesChain(item.rule);
+      const key = `${table}/${chain}`;
+      const fallbackNumber = (counters.get(key) ?? 0) + 1;
+      counters.set(key, fallbackNumber);
+      return [{
+        table,
+        chain,
+        number: typeof item.number === "number" && item.number > 0 ? item.number : fallbackNumber,
+        rule: item.rule
+      }];
+    }
+    return [];
+  });
+}
+
+function parseIPTablesChain(rule: string) {
+  const fields = rule.trim().split(/\s+/);
+  return fields[0] === "-A" && fields[1] ? fields[1] : "INPUT";
 }

@@ -38,6 +38,8 @@ export type FirewallStatus = {
 
 export type IPTablesRule = {
   table: "filter" | "nat" | "mangle" | "raw" | "security" | string;
+  chain?: string;
+  number?: number;
   rule: string;
 };
 

@@ -17,8 +17,10 @@ type FirewallStatus struct {
 }
 
 type IPTablesRule struct {
-	Table string `json:"table"`
-	Rule  string `json:"rule"`
+	Table  string `json:"table"`
+	Chain  string `json:"chain"`
+	Number int    `json:"number"`
+	Rule   string `json:"rule"`
 }
 
 type UFWRequest struct {
@@ -46,6 +48,7 @@ type IPTablesRequest struct {
 	OutInterface string `json:"outInterface,omitempty"`
 	Target       string `json:"target"`
 	Rule         string `json:"rule,omitempty"`
+	RuleNumber   int    `json:"ruleNumber,omitempty"`
 }
 
 var safeAddress = regexp.MustCompile(`^[A-Za-z0-9_.:/-]+$`)
@@ -64,13 +67,26 @@ func Firewall(ctx context.Context, runner Runner) FirewallStatus {
 	if status.IPTablesAvailable {
 		result, _ := runner.Run(ctx, 10*time.Second, "iptables-save")
 		table := "filter"
+		ruleNumbers := map[string]int{}
 		for _, line := range strings.Split(result.Output, "\n") {
 			if strings.HasPrefix(line, "*") {
 				table = strings.TrimPrefix(line, "*")
 				continue
 			}
 			if strings.HasPrefix(line, "-A ") {
-				status.IPTablesRules = append(status.IPTablesRules, IPTablesRule{Table: table, Rule: line})
+				fields := strings.Fields(line)
+				if len(fields) < 2 {
+					continue
+				}
+				chain := fields[1]
+				key := table + "/" + chain
+				ruleNumbers[key]++
+				status.IPTablesRules = append(status.IPTablesRules, IPTablesRule{
+					Table:  table,
+					Chain:  chain,
+					Number: ruleNumbers[key],
+					Rule:   line,
+				})
 			}
 		}
 	}
@@ -150,14 +166,15 @@ func IPTablesAction(ctx context.Context, runner Runner, req IPTablesRequest) (Co
 	if !validIPTablesTable(req.Table) {
 		return CommandResult{}, errors.New("invalid iptables table")
 	}
+	if req.Operation == "deleteExisting" {
+		return deleteExistingIPTablesRule(ctx, runner, req.Table, req.Chain, req.RuleNumber, req.Rule)
+	}
 	if !validIPTablesChain(req.Chain) {
 		return CommandResult{}, errors.New("invalid chain")
 	}
 
 	switch req.Operation {
 	case "append", "add", "insert", "delete":
-	case "deleteExisting":
-		return deleteExistingIPTablesRule(ctx, runner, req.Table, req.Rule)
 	case "policy":
 		if !validIPTablesTarget(req.Target) {
 			return CommandResult{}, errors.New("invalid target")
@@ -227,12 +244,18 @@ func IPTablesAction(ctx context.Context, runner Runner, req IPTablesRequest) (Co
 	return runner.Run(ctx, 20*time.Second, "iptables", args...)
 }
 
-func deleteExistingIPTablesRule(ctx context.Context, runner Runner, table, rule string) (CommandResult, error) {
+func deleteExistingIPTablesRule(ctx context.Context, runner Runner, table, chain string, ruleNumber int, rule string) (CommandResult, error) {
 	if table == "" {
 		table = "filter"
 	}
 	if !validIPTablesTable(table) {
 		return CommandResult{}, errors.New("invalid iptables table")
+	}
+	if chain != "" && ruleNumber > 0 {
+		if !validIPTablesChain(chain) {
+			return CommandResult{}, errors.New("invalid chain")
+		}
+		return runner.Run(ctx, 20*time.Second, "iptables", "-t", table, "-D", chain, strconv.Itoa(ruleNumber))
 	}
 	fields := strings.Fields(rule)
 	if len(fields) < 3 || fields[0] != "-A" {

@@ -131,8 +131,15 @@ fn open_ssh(profile: SshProfile) -> Result<(), String> {
 
         let candidates: Vec<(&str, Vec<&str>)> = vec![
             ("xdg-terminal-exec", vec!["ssh", &target, "-p", &port]),
+            ("ptyxis", vec!["--", "ssh", &target, "-p", &port]),
+            ("kgx", vec!["--", "ssh", &target, "-p", &port]),
             ("gnome-terminal", vec!["--", "ssh", &target, "-p", &port]),
             ("konsole", vec!["-e", "ssh", &target, "-p", &port]),
+            ("wezterm", vec!["start", "--", "ssh", &target, "-p", &port]),
+            ("alacritty", vec!["-e", "ssh", &target, "-p", &port]),
+            ("kitty", vec!["ssh", &target, "-p", &port]),
+            ("footclient", vec!["ssh", &target, "-p", &port]),
+            ("foot", vec!["ssh", &target, "-p", &port]),
             ("xfce4-terminal", vec!["-e", &command_text]),
             ("xterm", vec!["-e", "ssh", &target, "-p", &port]),
         ];
@@ -281,8 +288,35 @@ fn escape_osascript(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+#[cfg(target_os = "linux")]
+fn configure_linux_display_backend() {
+    let has_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let has_x11 = std::env::var_os("DISPLAY").is_some();
+
+    if std::env::var_os("WINIT_UNIX_BACKEND").is_none() {
+        if has_wayland {
+            std::env::set_var("WINIT_UNIX_BACKEND", "wayland");
+        } else if has_x11 {
+            std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+        }
+    }
+
+    if std::env::var_os("GDK_BACKEND").is_none() {
+        if has_wayland && has_x11 {
+            std::env::set_var("GDK_BACKEND", "wayland,x11");
+        } else if has_wayland {
+            std::env::set_var("GDK_BACKEND", "wayland");
+        } else if has_x11 {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_display_backend();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![agent_request, open_ssh])
         .run(tauri::generate_context!())

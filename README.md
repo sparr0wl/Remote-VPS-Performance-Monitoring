@@ -85,6 +85,8 @@ pnpm tauri dev
 
 On Linux, the desktop client now prefers Wayland automatically when `WAYLAND_DISPLAY` is present and falls back to X11 when only `DISPLAY` is available. SSH quick connect also recognizes common Wayland-native terminals such as `ptyxis`, `kgx`, `foot`, `kitty`, `wezterm`, and `alacritty`.
 
+If `pnpm tauri dev` keeps waiting for the frontend server on Linux, make sure the Vite dev server and Tauri `devUrl` both use the same loopback address. This project uses `127.0.0.1:1420` to avoid `localhost` IPv4/IPv6 resolution mismatches.
+
 For web-only development:
 
 ```bash

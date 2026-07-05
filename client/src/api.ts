@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type {
   CommandResult,
   ConfigFile,
@@ -7,6 +8,12 @@ import type {
   Profile,
   Service
 } from "./types";
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
 
 export class AgentApi {
   private profile: Profile;
@@ -42,20 +49,35 @@ export class AgentApi {
     return this.request<FirewallStatus>("/api/firewall");
   }
 
-  ufw(operation: string, port?: number, protocol = "tcp") {
+  ufw(body: {
+    operation: "enable" | "disable" | "status" | "reload" | "reset" | "default" | "allow" | "deny" | "reject" | "limit" | "delete";
+    ruleAction?: "allow" | "deny" | "reject" | "limit";
+    ruleNumber?: number;
+    port?: number;
+    protocol?: "tcp" | "udp";
+    from?: string;
+    to?: string;
+    policy?: "allow" | "deny" | "reject";
+    direction?: "incoming" | "outgoing" | "routed";
+  }) {
     return this.request<CommandResult>("/api/firewall/ufw", {
       method: "POST",
-      body: JSON.stringify({ operation, port, protocol })
+      body: JSON.stringify(body)
     });
   }
 
   iptables(body: {
-    operation: "add" | "delete";
-    chain: "INPUT" | "OUTPUT" | "FORWARD";
+    operation: "append" | "add" | "insert" | "delete" | "policy" | "flush" | "zero";
+    table?: "filter" | "nat" | "mangle" | "raw" | "security";
+    chain: "INPUT" | "OUTPUT" | "FORWARD" | "PREROUTING" | "POSTROUTING";
     protocol?: "tcp" | "udp" | "icmp";
+    sport?: number;
     dport?: number;
     source?: string;
-    target: "ACCEPT" | "DROP" | "REJECT";
+    destination?: string;
+    inInterface?: string;
+    outInterface?: string;
+    target: "ACCEPT" | "DROP" | "REJECT" | "LOG" | "RETURN" | "MASQUERADE" | "DNAT" | "SNAT";
   }) {
     return this.request<CommandResult>("/api/firewall/iptables", {
       method: "POST",
@@ -98,6 +120,23 @@ export class AgentApi {
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const endpoint = this.profile.endpoint.replace(/\/$/, "");
+    const method = init.method ?? "GET";
+    const body = typeof init.body === "string" ? init.body : undefined;
+
+    if (window.__TAURI_INTERNALS__) {
+      const response = await invoke<{ status: number; body: string }>("agent_request", {
+        request: {
+          endpoint,
+          token: this.profile.token,
+          method,
+          path,
+          body
+        }
+      });
+      const data = response.body ? JSON.parse(response.body) : {};
+      return data as T;
+    }
+
     const response = await fetch(endpoint + path, {
       ...init,
       headers: {
